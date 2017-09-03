@@ -1,2 +1,4 @@
 See Utility.py for dataset, vocabulary and word2index generation.
 After successfully running Utility.py run train.py to train the model and validation.py to validate it on validation dataset.
+
+Will add documentation soon.
