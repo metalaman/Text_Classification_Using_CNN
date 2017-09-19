@@ -1,8 +1,17 @@
+'''
+This file does the following(in-order):
+1) loads the labels and product titles.
+2) removes special symbols and numbers from product titles and make a dataframe with columns productTitle and label.
+3) removes all words with length < 2 from productTitle.
+4) create a vocabulary with word threshold = 2 and removes words in productTitle if their count is < word threshold.
+5) pad every title whose length is less than 48 with <PAD>
+6) convert words to ids in productTitle
+7) Create a randomized stratified split of data with train:test :: 0.8:0.2
+'''
 import pickle
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import StratifiedShuffleSplit
-from nltk.tokenize import word_tokenize
 from collections import Counter
 
 productTitles = list(open('../data/product_title.txt').readlines())
@@ -43,9 +52,6 @@ df.productTitle = df.productTitle.apply(lambda x: filter(lambda y: y in vocab.ke
 df.productTitle = df.productTitle.replace('', np.nan)
 df = df.dropna(subset=['productTitle'], axis=0)
 maxTextLength = df.productTitle.apply(lambda x: len(x.split())).max()
-
-#s = df.productTitle.str.len().sort_values().index
-#df.reindex(s).values
 
 def padText(x):
     global maxTextLength

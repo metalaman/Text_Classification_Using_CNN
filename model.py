@@ -11,6 +11,10 @@ class ProductClassifier():
     def __init__(self, filterSizes, numClasses, learningRate=0.001,
                 embeddingSize=128, batchSize=64, fcSize=128, keepProb=0.75,
                 resume=1, mode='train'):
+        '''
+        Description: Initializes the model with passes parameters. Loads a
+        trained model, if present and resume = 1, to continue training it.
+        '''
         self.filterSizes = filterSizes
         self.numClasses = numClasses
         self.learningRate = learningRate
@@ -56,6 +60,13 @@ class ProductClassifier():
         self.Wemb = self.init_weight([len(self.vocab), self.embeddingSize])
 
     def get_batch(self):
+        '''
+        Description: Iterates over the text(Train) numpy array to generate a batch.
+        Extracts the one-hot encoded class of the text array.
+        Parameters: None
+        Return Value: textBatch - pre-processed batch of training text
+                      classBatch  - one-hot encoded true class batch
+        '''
         for batch_idx in range(0, len(self.XTrain), self.batchSize):
             textBatch = self.XTrain[batch_idx:batch_idx + self.batchSize]
             classBatch = self.yTrain[batch_idx:batch_idx + self.batchSize]
@@ -63,6 +74,13 @@ class ProductClassifier():
             yield textBatch, classBatch
 
     def get_val_batch(self):
+        '''
+        Description: Iterates over the text(Test) numpy array to generate a batch.
+        Extracts the one-hot encoded class of the text array.
+        Parameters: None
+        Return Value: textBatch - pre-processed batch of training text
+                      classBatch  - one-hot encoded true class batch
+        '''
         for batch_idx in range(0, len(self.XTest), self.batchSize):
             textBatch = self.XTest[batch_idx:batch_idx + self.batchSize]
             classBatch = self.yTest[batch_idx:batch_idx + self.batchSize]
@@ -70,21 +88,58 @@ class ProductClassifier():
             yield textBatch, classBatch
 
     def init_weight(self, shape):
+        '''
+        Description: Returns a tensor of the given shape, with random initial
+        values from a uniform distribution in range [0,1) transformed to a
+        range [-1,1).
+        Parameters: shape - a list
+        Return Value: returns a tensor.
+        '''
         return tf.Variable(tf.random_uniform(shape) * 2 - 1)
 
     def init_bias(self, shape):
+        '''
+        Description:Creates a tensor of the given shape with all elements set
+        to zero.
+        Parameters: shape - a list
+        Return Value: returns a tensor.
+        '''
         return tf.Variable(tf.zeros(shape))
 
     def conv2D_layer(self, inp, kernelShape, biasShape):
+        '''
+        Description: Computes the 2D convolution on inp and kernel(weights), and
+        activates the output with Rectified Linear Unit. Kernel's stride is 1 in
+        each dimension and no padding('VALID') is done.
+        Parameters: inp - a tensor on which 2D convolution is performed.
+                    kernelShape - a list
+                    biasShape - a list
+        Return Value: returns a tensor.
+        '''
         weights = self.init_weight(kernelShape)
         bias = self.init_bias(biasShape)
         conv = tf.nn.conv2d(inp, weights, strides=[1, 1, 1, 1], padding='VALID')
         return tf.nn.relu(conv + bias)
 
     def pool_layer(self, inp, kernelShape):
+        '''
+        Description: Computes the max pool operation on the inp tensor.
+        Parameters: inp - a tensor
+                    kernelShape - shape of the kernel over which max pooling is done.
+        Return Value: returns a tensor.
+        '''
         return tf.nn.max_pool(inp, ksize=kernelShape, strides=[1, 1, 1, 1], padding='VALID')
 
     def fc_layer(self, inp, inpShape, outShape, activation=False):
+        '''
+        Description: Creates a fully connected layer with optional Rectified
+        Linear Unit activation for the neurons in the layer.
+        Parameters: inp - a tensor
+                    inpShape - shape of inp. 2D, [Batch, num_features]
+                    outShape - determines the number of neurons in the layer
+                    activation - Boolean value to perform activation
+        Return Value: a tensor
+        '''
         weights = self.init_weight([inpShape, outShape])
         bias = self.init_bias(outShape)
         out = tf.matmul(inp, weights) + bias
@@ -93,6 +148,39 @@ class ProductClassifier():
         return out
 
     def build_training_graph(self):
+        '''
+        Description: A computational graph for training of the model. The input
+        of shape [batchSize,48] is first passed through an embedding layer. The
+        embedding after expanding the dimension(to accomodate for channel), with
+        shape [batchSize,48,128,1] is then convolved with kernels of 3 filter
+        sizes(see train.py - filterSize is [3,4,5]). These filter size are the
+        number of words that are convolved while sliding the kernel over the input.
+        Each conv2D operation generates 32 filter banks.
+        The pooled features are stacked and are passed through two fully connected
+        layers(1st one with dropouts). Finally the output from fc2 is used to
+        compute cross entropy loss.
+
+        E.g. shape of a conv2D operation with filterSize = 3 and 32 filters-
+            embedding           : [batchSize,48,128,1]
+            filter              : [3,128,1,32]
+            Output of conv2D-
+            conv                : [batchSize,46,1,32]  (46 due to 'VALID' padding)
+            Pooling Layer-
+            pool filter         : [1,46,1,1]
+            pooled              : [batchSize,1,1,32]
+            stacking pooled features for our 3,4 and 5 filterSizes and collapsing dimensions-
+            flatStackedFeatures : [batchSize,96]
+            fully connected layers with fcSize = 128-
+            fc1Features         : [batchSize,128]
+            fc2Features         : [batchSize,25]
+
+        Parameters: None
+        Return Value: loss - cross_entropy loss averaged on all text sequence in the
+                             batch.
+                      inp_dict - dict which holds the placeholder values for
+                                 the current batch
+
+        '''
         embedding = tf.nn.embedding_lookup(self.Wemb, self.inputDict['text'])
         embedding = tf.expand_dims(embedding, -1)
 
@@ -113,6 +201,17 @@ class ProductClassifier():
 
 
     def train(self, loss, inputDict):
+        '''
+        Description: Function to run the training graph for specified
+        epochs. Weight updation is done by Adam Optimizer with a decaying
+        learning rate. Also, loads a pre-trained model for resuming training
+        and saves the currently trained model after every epoch.
+        Parameters: loss - cross_entropy loss averaged on all text sequences in the
+                             batch.
+                    inp_dict - dict which holds the placeholder values for
+                               the current batch
+        Return Value: None
+        '''
         self.loss = loss
         self.inputDict = inputDict
         saver = tf.train.Saver(max_to_keep=10)
@@ -163,6 +262,9 @@ class ProductClassifier():
 
 
     def build_validation_graph(self):
+        '''
+        Similar to build_train_graph, except we're computing accuracy instead of loss.
+        '''
         embedding = tf.nn.embedding_lookup(self.Wemb, self.inputDict['text'])
         embedding = tf.expand_dims(embedding, -1)
 
@@ -185,6 +287,9 @@ class ProductClassifier():
         return accuracy, self.inputDict
 
     def validation(self, accuracy, inputDict):
+        '''
+        similar to train, except we're getting accuracy.
+        '''
         self.accuracy = accuracy
         self.inputDict = inputDict
         saver = tf.train.Saver()
